@@ -1,0 +1,11 @@
+#!/bin/bash
+#BSUB -q short-serial
+#BSUB -J calc_clim_anoms[6-6]
+#BSUB -oo calc_clim_anoms-%J-%I.o
+#BSUB -eo calc_clim_anoms-%J-%I.e 
+#BSUB -W 01:20
+
+for e in piControl historical rcp26 rcp45 rcp60 rcp85 1pctCO2;
+do
+    python calc_CMIP5_clim_anoms.py -m ${LSB_JOBINDEX} -e $e
+done
