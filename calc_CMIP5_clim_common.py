@@ -76,7 +76,7 @@ import sys
 from CMIP5_model_list import CMIP5_model_list
 from CMIP5_var_list import CMIP5_var_list
 
-DEBUG=False
+DEBUG=True
 
 def get_output_base_path():
     return "/group_workspaces/jasmin/cedaproc/nrmassey/CMIP5"
@@ -99,7 +99,7 @@ def get_drs_object(model_desc, experiment, variable):
     """Get a drs object from a model description, experiment and variable.  This can then be used to build paths to the files.
        :param list[] model_desc: description of CMIP5 model to use, a single member of CMIP5_model_list
        :param string experiment: which experiment (historical|rcp26|rcp45|rcp60|rcp85|piControl|1pctCO2)
-       :param string var_name: name of the variable, standard name or CMOR name
+       :param string variable: name of the variable, standard name or CMOR name
     """
    # get the drs object
     drs_obj = CmipDRS(activity="cmip5", product="output1",
@@ -110,21 +110,29 @@ def get_drs_object(model_desc, experiment, variable):
     return drs_obj
 
 
-def get_drs_obj_latest_version(drs_obj, basepath):
+def get_drs_obj_latest_version(drs_obj):
     """Get the latest version of a drs object in the CMIP5 archive.
        This function searches for the "latest" symbolic link in the drs filepath, resolves this link and sets the version to be that of the link
        :param CmipDRS drs_obj: drs_object as created by get_drs_object above
-       :param string basepath: root path of CMIP5 archive
        :returns int version: integer version number
     """
+
+    # get the path from the drs object
+    if drs_obj.product == "derived":
+        base_path = get_output_base_path()
+    else:
+        base_path = get_cmip5_base_path()
+
     # return a different version for the GFDL-CM3 model for rcp45 experiment
     if drs_obj.model == "CanESM2" and drs_obj.experiment == "rcp45":
+        drs_obj.version = 20110829
         return 20110829
     # fake the version
     drs_obj.version = 1
     # get the fake path
-    cmip5_trans = cmip5.make_translator(basepath)
-    path = os.path.realpath(cmip5_trans.drs_to_path(drs_obj))
+    cmip5_trans = cmip5.make_translator(base_path)
+    logical_path = cmip5_trans.drs_to_path(drs_obj)
+    path = os.path.realpath(logical_path)
     # split the path
     split_path = path.split("/")
     # get the path up to the version number [-2]
@@ -149,18 +157,24 @@ def get_drs_obj_latest_version(drs_obj, basepath):
     return drs_obj.version
 
 
-def get_drs_obj_nearest_version(drs_obj, ref_version, basepath):
+def get_drs_obj_nearest_version(drs_obj, ref_version):
     """Get the latest version of a drs object in the CMIP5 archive.
        This function searches for the "latest" symbolic link in the drs filepath, resolves this link and sets the version to be that of the li$
        :param CmipDRS drs_obj: drs_object as created by get_drs_object above
        :param integer ref_version: version of reference drs_obj, we want to get as close as possible to this version
-       :param string basepath: root path of CMIP5 archive
        :returns int version: integer version number
     """
+
+    # get the path from the drs object
+    if drs_obj.product == "derived":
+        base_path = get_output_base_path()
+    else:
+        base_path = get_cmip5_base_path()
+
     # fake the version
     drs_obj.version = 1
     # get the fake path
-    cmip5_trans = cmip5.make_translator(basepath)
+    cmip5_trans = cmip5.make_translator(base_path)
     path = os.path.realpath(cmip5_trans.drs_to_path(drs_obj))
     # split the path
     split_path = path.split("/")
@@ -200,7 +214,11 @@ def get_files_between_year_period(drs_obj, start_year, end_year):
     out_files = []
  
     # get the path from the drs object
-    cmip5_trans = cmip5.make_translator(get_cmip5_base_path())
+    if drs_obj.product == "derived":
+        base_path = get_output_base_path()
+    else:
+        base_path = get_cmip5_base_path()
+    cmip5_trans = cmip5.make_translator(base_path)
     path = os.path.realpath(cmip5_trans.drs_to_path(drs_obj))
     
     # check the path exists
@@ -214,15 +232,28 @@ def get_files_between_year_period(drs_obj, start_year, end_year):
         # reject those with .nc extension
         if f[-3:] != ".nc":
             continue
-        # run cdo showyear on the file: need to resolve all symbolic links first!
+        # resolve all symbolic links on the file
         real_f = os.path.realpath(path + "/" + f)
-        out_yrs = cdo(["showyear", real_f])
-        # convert the output into a list of integers
-        out_yrs = map(lambda x: int(x), out_yrs.split())
+        if False:
+            # This is the slow version which uses cdo to get the years from the files
+            # It can fail on an empty file
+            # run cdo showyear on the file
+            try:
+                out_yrs = cdo(["showyear", real_f])
+                # convert the output into a list of integers
+                out_yrs = map(lambda x: int(x), out_yrs.split())
+            except:
+                pass
+        else:
+            # This is the faster version which uses the drslib to get the start and end year from the filename
+            drs_out_obj = cmip5_trans.filename_to_drs(f)
+            out_yrs = range(drs_out_obj.subset[0][0], drs_out_obj.subset[1][0]+1)
         # check if start year or end year in out_yrs and add file to output list of files if it is
-        if (out_yrs[0] >= start_year and out_yrs[-1] <= end_year) or \
-            start_year in out_yrs or end_year in out_yrs:
+        if (len(out_yrs) != 0 and \
+            ((out_yrs[0] >= start_year and out_yrs[-1] <= end_year) or \
+             start_year in out_yrs or end_year in out_yrs)):
             out_files.append(real_f)
+            
     return out_files
 
 
@@ -234,8 +265,15 @@ def get_min_max_years(drs_obj):
     """
 
     # get the path from the drs object
-    cmip5_trans = cmip5.make_translator(get_cmip5_base_path())
-    path = os.path.realpath(cmip5_trans.drs_to_path(drs_obj))
+    if drs_obj.product == "derived":
+        base_path = get_output_base_path()
+    else:
+        base_path = get_cmip5_base_path()
+
+    # get the path from the drs object
+    cmip5_trans = cmip5.make_translator(base_path)
+    logical_path = cmip5_trans.drs_to_path(drs_obj)
+    path = os.path.realpath(logical_path)
 
     # get a list of the files
     if not os.path.exists(path):
@@ -249,11 +287,18 @@ def get_min_max_years(drs_obj):
         # reject those with .nc extension
         if f[-3:] != ".nc":
             continue
-        # run cdo showyear on the file: need to resolve all symbolic links first!
-        real_f = os.path.realpath(path + "/" + f)
-        out_yrs = cdo(["showyear", real_f])
-        # convert the output into a list of integers
-        out_yrs = map(lambda x: int(x), out_yrs.split())
+        if False:
+            # This is version one, which uses cdo to get the years from the files - i.e. we don't trust the filename.  It's thorough but slow
+            # run cdo showyear on the file: need to resolve all symbolic links first!
+            real_f = os.path.realpath(path + "/" + f)
+            out_yrs = cdo(["showyear", real_f])
+            # convert the output into a list of integers
+            out_yrs = map(lambda x: int(x), out_yrs.split())
+        else:
+            # This is version two, which relies on the drs filename being correct - it's much quicker!
+            drs_out_obj = cmip5_trans.filename_to_drs(f)
+            out_yrs = [drs_out_obj.subset[0][0], drs_out_obj.subset[1][0]]
+        # get the min and max year
         if max(out_yrs) > max_year:
             max_year = max(out_yrs)
         if min(out_yrs) < min_year:
@@ -274,12 +319,12 @@ def get_first_year(drs_obj):
     return min_year
 
 
-def get_start_end_years(drs_obj, variable, clim_period):
+def get_start_end_years(drs_obj, clim_period):
     """Get the start and end year for an experiment, variable and climate_meaning_period
-       :param List[string] model_desc: description of model, see 
-       :param string experiment: name of the experiment, historical, rcp45, etc
+       :param CmipDRS drs_obj: drs object as created by get_drs_obj above
        :param Tuple(int, int) clim_period: climatological period in a tuple: (start_year, end_year)
-       :param string var_name: name of the variable, standard name or CMOR name
+       :returns: the start and end year of the climatological period
+       :rtype: Tuple(int, int)
     """
     # get the start year and end year
     if clim_period[0] > 1000:    # actual real years, rather than offsets

@@ -1,11 +1,14 @@
 #!/bin/bash
 #BSUB -q short-serial
-#BSUB -J calc_clim_anoms[6-6]
+#BSUB -J calc_clim_anoms[2-43]
 #BSUB -oo calc_clim_anoms-%J-%I.o
 #BSUB -eo calc_clim_anoms-%J-%I.e 
 #BSUB -W 01:20
 
-for e in piControl historical rcp26 rcp45 rcp60 rcp85 1pctCO2;
+for e in rcp26 rcp45 rcp60 rcp85;
 do
-    python calc_CMIP5_clim_anoms.py -m ${LSB_JOBINDEX} -e $e
+    for v in pr va rsds psl uas huss tasmin hus tasmax vas ua;
+    do
+        /home/users/nrmassey/python_venv/bin/python calc_CMIP5_clim_anoms.py -m ${LSB_JOBINDEX} -v $v -c 30a -e $e
+    done
 done

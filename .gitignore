@@ -1,5 +1,8 @@
 cmip5-cmor-tables
 out
+CMIP5_AR5_table.csv
+images
+gmts
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

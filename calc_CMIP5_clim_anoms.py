@@ -11,7 +11,6 @@ Requires    : CDO, NCO, Python, drslib
 import subprocess
 import os, sys
 import argparse
-import time
 from drslib.drs import CmipDRS
 from drslib import cmip5
 from CMIP5_model_list import CMIP5_model_list
@@ -65,7 +64,6 @@ def calculate_reference_period(input_drs_obj):
         tmp_file = ref_output_path + "/tmp.nc"
         if os.path.exists(tmp_file):
             os.unlink(tmp_file)
-            time.sleep(1)
         cdo(["mergetime", " ".join(ref_file_list), tmp_file])
         # calculate the climatologies, first selecting the ref_sy->ref_ey period
         cdo(["ymonmean", "-selyear,"+str(ref_sy)+"/"+str(ref_ey), tmp_file, ref_output_filepath])
@@ -84,15 +82,24 @@ def calculate_climatological_mean_anomaly(model_desc, experiment, variable, clim
 
     # create the input drs object
     input_drs_obj = get_drs_object(model_desc, experiment, variable)
-    get_drs_obj_latest_version(input_drs_obj, get_cmip5_base_path())
+    get_drs_obj_latest_version(input_drs_obj)
 
     # get the files between the start_year and end_year for the model description, experiment and variable
-    start_year, end_year = get_start_end_years(input_drs_obj, variable, clim_period)
+    start_year, end_year = get_start_end_years(input_drs_obj, clim_period)
     input_file_list = get_files_between_year_period(input_drs_obj, start_year, end_year)
 
     # check if any files returned
     if len(input_file_list) == 0:
         return ""
+
+    # the 30 year means (30a) are defined as being between 2001->2030 for the first period.
+    # so, we need to add the historical file to the input_file_list
+    if "rcp" in experiment and clim_period[0] == 1:
+        # first copy the drs obj, and change the experiment to "historical"
+        historical_drs_obj = CmipDRS(input_drs_obj)
+        historical_drs_obj.experiment = "historical"
+        historical_file_list = get_files_between_year_period(historical_drs_obj, 2001, 2005)
+        input_file_list.extend(historical_file_list)
 
     # create the input reference files drs object
     # which reference to use?
@@ -103,7 +110,7 @@ def calculate_climatological_mean_anomaly(model_desc, experiment, variable, clim
 
     # create the input reference drs object and get the version of it which is the nearest to the input_drs_obj version
     input_ref_drs_obj = get_drs_object(model_desc, ref_exp, variable)
-    get_drs_obj_nearest_version(input_ref_drs_obj, input_drs_obj.version, get_cmip5_base_path())
+    get_drs_obj_nearest_version(input_ref_drs_obj, input_drs_obj.version)
 
     # calculate the reference period (if necessary, the function will check) and return its name
     ref_filepath = calculate_reference_period(input_ref_drs_obj)
@@ -120,26 +127,34 @@ def calculate_climatological_mean_anomaly(model_desc, experiment, variable, clim
     anom_output_path = os.path.realpath(anom_cmip5_trans.drs_to_path(output_drs_obj))
     anom_output_filepath = os.path.realpath(anom_cmip5_trans.drs_to_filepath(output_drs_obj))
 
+    # delete the file if it exists - then we can do checking later, and after multiple passes
+    if os.path.exists(anom_output_filepath):
+        os.unlink(anom_output_filepath)
+
     # create the output path if it doesn't exist
     if not os.path.exists(anom_output_path):
         os.makedirs(anom_output_path)
+
     # create the output name of the temporary file
     tmp_file = anom_output_path + "/tmp.nc"
     # delete temporary file if it already exists
     if os.path.exists(tmp_file):
         os.unlink(tmp_file)
-        time.sleep(1)
+
     # concatenate all of the files together in time and output to a temporary file in the output directory
-    cdo(["mergetime", " ".join(input_file_list), tmp_file])
-    time.sleep(1)
+    selyear_str = "-selyear,{:d}/{:d}".format(start_year, end_year)
+    cdo_cmd = ["-mergetime"]
+    for f in input_file_list:
+        cdo_cmd.append(selyear_str)
+        cdo_cmd.append(f)
+    cdo_cmd.append(tmp_file)
+    cdo(cdo_cmd)
 
     # calculate the climatologies and subtract the reference climatology
-    cdo(["sub", "-ymonmean", "-selyear,{:d}/{:d}".format(start_year, end_year), tmp_file, ref_filepath, anom_output_filepath])
+    cdo(["sub", "-ymonmean", selyear_str, tmp_file, ref_filepath, anom_output_filepath])
 
     # delete the temporary file
-    time.sleep(1)
     os.unlink(tmp_file)
-    time.sleep(1)
     return anom_output_filepath
 
 
@@ -178,6 +193,8 @@ if __name__ == "__main__":
     else:
         clim_periods = [args.c[0]]
 
+    print model_desc, experiment, clim_periods, var_list
+
     # subset CMIP5_climatological_periods to remove AR5 periods if experiment is "historical"
     for variable in var_list:
         for p in clim_periods:
@@ -186,7 +203,7 @@ if __name__ == "__main__":
                 continue
             # now get the years:
             for clim_period in CMIP5_climatological_periods[p]:
-                try:
+#                try:
                     clim_mean_anom_file = calculate_climatological_mean_anomaly(model_desc, experiment, variable, clim_period)
-                except:
-                    print "Failed on ", model_desc, experiment, variable
+#                except:
+#                    print "Failed on ", model_desc, experiment, variable
