@@ -1,0 +1,10 @@
+#!/bin/bash
+
+for cp in 20x 30a AR5;
+do
+    for v in tas pr va rsds psl uas huss tasmin hus tasmax vas ua;
+#    for v in ua va hus;
+    do
+        /home/users/nrmassey/python_venv/bin/python plot_CMIP5_global_means.py -v $v -c $cp
+    done
+done
