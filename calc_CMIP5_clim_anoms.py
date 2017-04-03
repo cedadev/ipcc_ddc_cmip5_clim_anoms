@@ -203,7 +203,7 @@ if __name__ == "__main__":
                 continue
             # now get the years:
             for clim_period in CMIP5_climatological_periods[p]:
-#                try:
+                try:
                     clim_mean_anom_file = calculate_climatological_mean_anomaly(model_desc, experiment, variable, clim_period)
-#                except:
-#                    print "Failed on ", model_desc, experiment, variable
+                except:
+                    print "Failed on ", model_desc, experiment, variable

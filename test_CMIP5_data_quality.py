@@ -3,7 +3,7 @@
 Program     : Test the quality of the derived CMIP5 data that is to be uploaded to the IPCC DDC
               Data quality checks are:
                 1. File presence.  The files calculated match those in Table AI.1 in IPCC AR5 Annex 1
-                2. Metadata integrity.  The metadata in the derived file matches that in the original file. (The derived file will have some extra attributes, of course)
+                2. File size >= than a minimum field size (HadCM3 field size)
                 
 Author      : Neil Massey
 Organisation: CEDA (STFC)
